@@ -1,5 +1,5 @@
 function [solutions] = find_singularity(J, variables)
-    %Function that computes the singularity of ajacobian matrix square or
+    %Function that computes the singularity of a jacobian matrix square or
     %not
     %
     %parameters:
