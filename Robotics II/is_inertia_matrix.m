@@ -3,7 +3,27 @@ function is_an_inertia_matrix = is_inertia_matrix(matrix)
     % Check if the matrix is symmetric
     if ~isequal(matrix, matrix')
         error('Matrix is not symmetric');
+    else
+        disp("Matrix is symmetric OK")
     end
+
+    % print all the qx symbols
+    qs = sym([]);
+    list_symbols = symvar(matrix);
+    for i = 1:length(list_symbols)
+        if contains(char(list_symbols(i)), 'q')
+            qs = [qs, list_symbols(i)];
+        end
+    end
+
+    % if qs contains only q1, the matrix is not an inertia matrix
+    if symvar(qs) == sym('q1')
+        is_an_inertia_matrix = false;
+        disp("this matrix is not an inertia matrix since it is dependent directly on q1")
+        disp(" ")
+        return;
+    end
+
     
     % Check if the matrix is positive definite
     % Check determinant

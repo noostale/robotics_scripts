@@ -1,4 +1,13 @@
-function Y = regressor_matrix(arg,a_vector)
-    %input
-    %a_vector= a vector of form [a1;a2;a3..]
-    Y=simplify(jacobian(arg,a_vector))
+function Y = regressor_matrix(arg, a_vector)
+    % Compute the regressor matrix of a given vector
+    % INPUTS:
+    % arg: the function to compute the regressor matrix
+    % a_vector: the vector to compute the regressor matrix
+    % OUTPUTS:
+    % Y: the regressor matrix of the given vector
+
+    Y = simplify(jacobian(arg, a_vector));
+    disp('The regressor matrix is: ');
+    disp(Y);
+    
+    end
