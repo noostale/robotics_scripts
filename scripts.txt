@@ -1,0 +1,803 @@
+::::::::::::::
+DHMatrix.m
+::::::::::::::
+function [T, A] = DHMatrix(DHTABLE)
+    % DHMatrix computes the homogeneous transformation matrix from a given 
+    % Denavit-Hartenberg (DH) table.
+    %
+    % PARAMETERS:
+    %   - DHTABLE: An Nx4 matrix where each row represents a DH parameter set
+    %     in the order: [alpha, a, d, theta]
+    %     * alpha: Link twist (angle between Zi-1 and Zi about Xi-1) [rad]
+    %     * a: Link length (distance between Zi-1 and Zi along Xi-1) [m]
+    %     * d: Link offset (distance between Xi-1 and Xi along Zi) [m]
+    %     * theta: Joint angle (rotation around Zi) [rad]
+    %
+    % OUTPUT:
+    %   - T: The cumulative transformation matrix from base to end-effector
+    %   - A: A cell array containing individual transformation matrices for
+    %        each row of the DH table
+    %
+    % USAGE EXAMPLE:
+    %   DHTABLE = [0, 1, 0, pi/2; 0, 1, 0, 0]; 
+    %   [T, A] = DHMatrix(DHTABLE);
+    
+        % Initialize transformation matrix as identity
+        T = eye(4);
+        
+        % Get the number of rows in the DH table (number of joints)
+        numJoints = size(DHTABLE, 1);
+        
+        % Preallocate cell array for individual transformation matrices
+        A = cell(1, numJoints);
+        
+        for i = 1:numJoints
+            % Extract DH parameters for joint i
+            alpha = DHTABLE(i, 1); % Link twist
+            a = DHTABLE(i, 2);     % Link length
+            d = DHTABLE(i, 3);     % Link offset
+            theta = DHTABLE(i, 4); % Joint angle
+            
+            % Compute the individual transformation matrix
+            A{i} = [cos(theta), -sin(theta)*cos(alpha),  sin(theta)*sin(alpha), a*cos(theta);
+                    sin(theta),  cos(theta)*cos(alpha), -cos(theta)*sin(alpha), a*sin(theta);
+                    0,           sin(alpha),            cos(alpha),            d;
+                    0,           0,                     0,                     1];
+            
+            % Multiply to get the cumulative transformation matrix
+            T = T * A{i};   
+        end
+    
+        % Simplify if symbolic computation is detected
+        if isa(T, 'sym')
+            T = simplify(T);
+        end
+    end
+    ::::::::::::::
+RotationMatrices.m
+::::::::::::::
+syms alpha beta gamma rx ry rz;
+
+Rx = [1,           0,            0;
+      0,  cos(alpha),  -sin(alpha);
+      0,  sin(alpha),   cos(alpha);
+     ];
+
+Ry = [ cos(beta),   0,   sin(beta);
+               0,   1,           0;
+      -sin(beta),   0,   cos(beta);
+     ];
+
+Rz = [cos(gamma),  -sin(gamma),   0;
+      sin(gamma),   cos(gamma),   0;
+               0,            0,   1;
+     ];
+
+skew_matrix = [  0,  -rz,   ry;
+                rz,    0,  -rx;
+               -ry,   rx,    0;
+               ];::::::::::::::
+bound_of_g.m
+::::::::::::::
+function alpha = bound_of_g(g,q)
+    %Function that outputs the upper bound alpha
+    % on g 
+    %
+    %input:
+    %- g = the gravity vector
+    %- q = a vertical vector q [q1;q2;q3]
+    %
+    %output: the value of alpha
+
+    dgdq=jacobian(g,q');
+    m=simplify(dgdq'*dgdq)
+    eigenvalues=eig(m)
+    display('maximum eigenvalue:')
+    max_=simplify(max(eigenvalues))
+    alpha=simplify(sqrt(max_))
+    
+
+
+*** exams: directory ***
+
+::::::::::::::
+find_singularity.m
+::::::::::::::
+function [solutions] = find_singularity(J, variables)
+    %Function that computes the singularity of a jacobian matrix square or
+    %not
+    %
+    %parameters:
+    %J= jacobian
+    %variables= vector of variables of the jacobians
+    [m, n] = size(J);
+    if m ~= n % If m not equal to n (joints) | If m == n, then it's square.
+        if m < n 
+            for i = 1:n
+                % Create a submatrix of the original non-square matrix by
+                % removing one column at a time
+                Jcopy=J;
+                Jcopy(:,i)=[];
+    
+                % Determinant of the i-th submatrix
+                fprintf('Determinant of the %s -th submatrix: \n', mat2str(i));
+                disp(simplify(det(Jcopy)));
+    
+                % Compute the singularity (equal the determinant to zero)
+                fprintf('singularity condition of the %s -th submatrix: \n', mat2str(i));
+                disp(simplify(det(Jcopy)==0));
+            end
+        else 
+            %create all submatrix generated from removing any m-n rows
+
+            %case of Jacobian 6*4
+            if m==6 & n==4
+                %create the sumatrices by creating all the 4by4
+                %submatrices
+                k=0;
+                for i = 1:m
+                    % Create a submatrix of the original non-square matrix by
+                    % removing one column at a time
+                    Jcopy=J;
+                    Jcopy(i,:)=[];
+                    for j=1:m-1
+                        k=k+1;
+                        Jcopy2=Jcopy;
+                        Jcopy2(j,:)=[];
+                        % Determinant of the i-th submatrix
+                        fprintf('Determinant of the %s -th submatrix: \n', mat2str(k));
+                        disp(simplify(det(Jcopy2)));
+                    end
+                end
+            else
+                disp('The jacobian you have parsed has more rows than columns and its not a geometric jacobian')
+                % Compute the determinant
+                determinant_Jacobian = simplify(det(J.' * J));
+        
+                disp('Determinant of the Jacobian:');
+                disp(simplify(determinant_Jacobian));
+        
+                disp("You might want to check when the Jacobian loses full rank.")
+                disp("For doing so, you have to solve the Determinant above for the values which make it == 0.")
+                disp("Example: solve(simplify(det(J.' * J)) == 0, variables);")
+            end
+        end
+    else
+        % Compute the determinant
+        determinant_Jacobian = simplify(det(J));
+
+        disp('Determinant of the Jacobian:');
+        disp(simplify(determinant_Jacobian));
+
+        n_var=length(variables)
+        % Solve for all possible values of the symbols that make the determinant zero
+        if n_var==2
+            [q1_sol,q2_sol,~, ~] = solve(determinant_Jacobian == 0, variables, 'ReturnConditions', true);
+            solutions=[q1_sol,q2_sol];
+        elseif  n_var==3
+            [q1_sol,q2_sol,q3_sol,~, ~] = solve(determinant_Jacobian == 0, variables, 'ReturnConditions', true);
+            solutions=[q1_sol,q2_sol,q3_sol];
+        elseif  n_var==4
+            [q1_sol,q2_sol,q3_sol,q4_sol,~, ~] = solve(determinant_Jacobian == 0, variables, 'ReturnConditions', true);
+            solutions=[q1_sol,q2_sol,q3_sol,q4_sol];
+        end
+        disp('All possible solutions for the symbols that make the determinant zero:');
+        display(solutions);
+    end
+end::::::::::::::
+g_from_potential_energy.m
+::::::::::::::
+function g = g_from_potential_energy(U,q)
+    %Function that outputs the gravity vector from the 
+    %potential energy
+    %
+    %input:
+    %- U = th potential energy (the sum of the potential energy of the single
+    %links)
+    %- q = a vertical vector q [q1;q2;q3]
+
+    g=vpa(simplify(jacobian(U,q)))'::::::::::::::
+inertia_matrix_from_DH.m
+::::::::::::::
+function M = inertia_matrix_from_DH(dh_table, mass, inertia, P_CoM)
+    % Computes the inertia matrix given the DH parameters, mass, and inertia tensors
+    % 
+    % Inputs:
+    %   - dh_table: [n x 4] matrix of DH parameters [theta, d, a, alpha]
+    %   - mass: [n x 1] vector of masses for each link
+    %   - inertia: [3 x 3 x n] tensor containing inertia matrices of each link (at CoM)
+    %   - P_CoM: [n x 3] matrix of CoM positions in local link frames
+    % 
+    % Output:
+    %   - M: [n x n] Inertia matrix of the manipulator
+
+    n = size(dh_table, 1); % Number of links
+    syms q [1 n] real       % Generalized coordinates (joint variables)
+    syms dq [1 n] real      % Generalized velocities
+    
+    % Compute transformation matrices
+    T = sym(eye(4)); % Initialize transformation
+    P_CoM_base = sym(zeros(3, n)); % CoM positions in the base frame
+    Jv = sym(zeros(3, n, n)); % Linear velocity Jacobian
+    Jw = sym(zeros(3, n, n)); % Angular velocity Jacobian
+    
+    for i = 1:n
+        % Extract DH parameters
+        theta = dh_table(i, 4);
+        d = dh_table(i, 2);
+        a = dh_table(i, 3);
+        alpha = dh_table(i, 1);
+        
+        % Compute transformation matrix from frame i-1 to i
+        T_i = [cos(theta), -sin(theta)*cos(alpha),  sin(theta)*sin(alpha), a*cos(theta);
+               sin(theta),  cos(theta)*cos(alpha), -cos(theta)*sin(alpha), a*sin(theta);
+               0,           sin(alpha),           cos(alpha),           d;
+               0,           0,                     0,                   1];
+
+        % Update total transformation
+        T = T * T_i;
+        
+        % Extract the rotation and translation from the transformation matrix
+        R_i = T(1:3, 1:3); % Rotation matrix
+        P_i = T(1:3, 4);   % Translation vector (origin of link i in base frame)
+
+        % Compute CoM position in the base frame
+        P_CoM_base(:, i) = P_i + R_i * P_CoM(i, :)'; % Transform CoM position
+        
+        % Compute linear and angular velocity Jacobians
+        for j = 1:i
+            if j == 1
+                z_prev = [0; 0; 1]; % Base frame z-axis
+                o_prev = [0; 0; 0]; % Base frame origin
+            else
+                z_prev = T(1:3, 3); % z-axis of the previous frame
+                o_prev = T(1:3, 4); % Origin of the previous frame
+            end
+            % Linear velocity Jacobian computed at the CoM
+            Jv(:, j, i) = cross(z_prev, (P_CoM_base(:, i) - o_prev));
+            % Angular velocity Jacobian remains the same
+            Jw(:, j, i) = z_prev;
+        end
+    end
+
+    % Compute Inertia Matrix
+    M = sym(zeros(n, n)); % Initialize inertia matrix
+    
+    for i = 1:n
+        % Compute CoM displacement vector in base frame
+        d_i = P_CoM_base(:, i); 
+
+        % Apply parallel axis theorem to transform inertia tensor
+        I_base = inertia(:, :, i) + mass(i) * (d_i' * d_i * eye(3) - (d_i * d_i'));
+
+        % Compute kinetic energy contribution
+        M = M + mass(i) * (Jv(:, :, i)' * Jv(:, :, i)) + Jw(:, :, i)' * I_base * Jw(:, :, i);
+    end
+    
+    M = simplify(M); % Simplify the result
+end
+::::::::::::::
+inertia_matrix_from_kinetic_energy.m
+::::::::::::::
+function M = inertia_matrix_from_kinetic_energy(T, qdot_vector)
+    % Takes as inputs:
+    %   - T = the kinetic energy of the robot 
+    %   - qdot_vector = the vector of q_dot ex: [qd1,qd2,qd3]
+    %
+    % Output:
+    %   - M = the inertia matrix 
+    M = jacobian(jacobian(T, qdot_vector)', qdot_vector);
+end::::::::::::::
+inertia_matrix_to_coriolis.m
+::::::::::::::
+function [c, C] = inertia_matrix_to_coriolis(M, q, dq)
+    % Takes as inputs:
+    %   - M = the inertia matrix
+    %   - q = a vertical vector of q values
+    %   - dq = a vertical vector dot_q
+    % Output:
+    %   - c = robot centrifugal and Coriolis term
+    %   - C = Christoffel matrices
+
+    % Initialize variables
+    n = length(q); % Number of joints
+    C = cell(n, 1); % Initialize cell array to store Christoffel matrices
+    
+    % Loop over each joint
+    for i = 1:n
+        % Compute Christoffel matrix for the i-th joint
+        disp(['Christoffel matrix for joint ', num2str(i)])
+        Mi = M(:, i); % Select the i-th column of the inertia matrix
+        Ci = (1/2) * (jacobian(Mi, q) + jacobian(Mi, q)' - diff(M, q(i)));
+        C{i} = Ci; % Store the Christoffel matrix
+        
+        % Display the Christoffel matrix
+        disp(['C', num2str(i), ' = ']);
+        disp(Ci);
+    end
+    
+    % Compute robot centrifugal and Coriolis terms
+    disp("Robot centrifugal and Coriolis terms")
+    c = sym(zeros(n, 1));
+    for i = 1:n
+        c(i) = dq' * C{i} * dq;
+        disp(['c', num2str(i), ' = ']);
+        disp(c(i));
+    end
+end
+::::::::::::::
+is_inertia_matrix.m
+::::::::::::::
+function is_an_inertia_matrix = is_inertia_matrix(matrix)
+    
+    % Check if the matrix is symmetric
+    if ~isequal(matrix, matrix')
+        error('Matrix is not symmetric');
+    else
+        disp("Matrix is symmetric OK")
+    end
+
+    % print all the qx symbols
+    qs = sym([]);
+    list_symbols = symvar(matrix);
+    for i = 1:length(list_symbols)
+        if contains(char(list_symbols(i)), 'q')
+            qs = [qs, list_symbols(i)];
+        end
+    end
+
+    % if qs contains only q1, the matrix is not an inertia matrix
+    if symvar(qs) == sym('q1')
+        is_an_inertia_matrix = false;
+        disp("this matrix is not an inertia matrix since it is dependent directly on q1")
+        disp(" ")
+        return;
+    end
+
+    
+    % Check if the matrix is positive definite
+    % Check determinant
+    if isa(matrix, 'sym')
+        warning('The matrix is symbolic. Please check manually that the determinant is not negative.');
+        disp("determinant:")
+        disp(det(matrix))
+    elseif det(matrix) <= 0
+        is_an_inertia_matrix = false;
+        disp("this matrix is not an inertia matrix since the determinant is negative")
+        return;
+    end
+    
+    % Compute eigenvalues
+    eigenvalues = eig(matrix);
+    
+    % Check if all eigenvalues are positive
+    if isa(matrix, 'sym')
+        warning('The matrix is symbolic. Please check manually that the eigenvalues are all positive.');
+        disp("eigenvalues:")
+        disp(eigenvalues)
+        is_an_inertia_matrix = [];
+    elseif all(eigenvalues > 0)
+        is_an_inertia_matrix = true;
+    else
+        is_an_inertia_matrix = false;
+        disp("this matrix is not an inertia matrix since some eigenvalues are negative")
+    end
+    
+    if is_an_inertia_matrix == true
+        disp("this is an inertia matrix, remember to check that the matrix is not dependent directly on q1!")
+    end
+end::::::::::::::
+moving_frames_algorithm.m
+::::::::::::::
+function [w, v, vc, T] = moving_frames_algorithm(num_joints, DH, qdots, m, rc, prismatic_indices, I)
+    % This function performs the moving frame algorithm and returns the
+    % vectors w, v, vc, and the values of T for each joint
+    %
+    % Inputs:
+    %   - num_joints        = An integer representing the number of links of the robot
+    %   - DH                = The DH matrix of the robot in the order [alpha, a, d, theta]
+    %   - qdots             = A vector containing qdots ex: [qd1; qd2; qd3]
+    %   - m                 = a vector of masses [m1 ; ... ; mn]
+    %   - rc                = a vector containing the values ^ir_{ci} that is the distance
+    %                         between the i-th CoM from the i-th reference frame
+    %   - prismatic_indices = A list containing the list of prismatic indices, ex for a PPR = [1,2]
+    %   - I                 = a vector of 3 by 3 matrices [I1, .., In] which are the baricentric inertia matrices
+    %
+    % Outputs:
+    %   - w  = The angular velocity vector for each joint
+    %   - v  = The linear velocity vector for each joint
+    %   - vc = The velocity of the center of mass for each joint
+    %   - T  = The kinetic energy for each joint
+    
+    % Check that the DH is consistent with the indicated number of joints 
+    if size(DH, 1) ~= num_joints
+        error('Number of rows in DH matrix should be equal to the number of joints.');
+    end
+
+    % Check that rc is consistent with the number of joints 
+    if size(rc,2) ~= num_joints
+        error('Length of rc vector should be equal to the number of joints.');
+    end
+
+    disp("---- Starting the Moving Frames Algorithm ----");
+
+    % Display the number of joints and prismatic indices
+    disp(['Number of joints: ', num2str(num_joints)]);
+    
+    %START THE ALGORITHM:
+    v00 = [0; 0; 0];
+    w00 = [0; 0; 0];
+
+    % Initialize outputs
+    w = zeros(3, num_joints);
+    v = zeros(3, num_joints);
+    vc = zeros(3, num_joints);
+    T = cell(num_joints);
+    
+    % Start the loop
+    for i = 1:num_joints
+        In=I(1:3, (i-1)*3+1:i*3);
+        
+        % Computing sigma for prismatic joints
+        if ismember(i, prismatic_indices)
+            sigma = 1;
+        else
+            sigma =0;
+        end
+
+        % Computing A, R, and p
+        A = DHMatrix(DH(i,:));
+        R = A(1:3,1:3);
+        p = A(1:3,4);
+
+        r_i = R' * p;
+
+        % Computing omega
+        if i == 1
+            w_prev = w00;
+        else
+            w_prev = wi;
+        end
+        
+        % Computing w_i
+        wi = R' * (w_prev + (1 - sigma) * [0; 0; qdots(i)]);
+        fprintf('The value of w_%d is:', i);
+        fprintf('\n');
+        disp(wi);
+
+        % Computing v
+        if i == 1
+            v_prev = v00;
+        else
+            v_prev = vi;
+        end 
+        
+        % Computing v_i
+        vi = R' * (v_prev + sigma * [0; 0; qdots(i)]) + cross(wi, r_i, 1);
+        fprintf('The value of v_%d is:', i);
+        fprintf('\n');
+        disp(vi);
+
+        % Computing vc_i
+        vci = vi + cross(wi, rc(:, i));
+        fprintf('The value of vc_%d is:', i);
+        fprintf('\n');
+        disp(vci);
+
+        % Computing T_i
+        Ti = simplify(0.5 * m(i) * (vci' * vci) + 0.5 * wi' * In * wi);
+        fprintf('The value of T_%d is:', i);
+        fprintf('\n');
+        disp(Ti)
+        T{i} = Ti;
+    end::::::::::::::
+newton_euler_algorithm.m
+::::::::::::::
+function u_vector = newton_euler_algorithm(num_joints, DH, qd,qdd, m, I, r, rc, g0, prismatic_indices)
+    % This function performs the moving frame algorithm and returns the
+    % vectors w, v, vc, and the values of T for each joint
+    %
+    %inputs:
+    % num_joints= an int reapresenting the number of links o fthe robot
+    %
+    % DH = the DH matrix of the robot in the order [alpha, a, d, theta ]
+    %
+    % qdts = a vector containing qdots ex: [qd1; qd2; qd3]
+    %
+    % m
+    %
+    % I = a vector of kind [I1,I2..]
+    %
+    % r = a vector containing the values ^ir_{i-1,i} that is the distance
+    % between frame i-1 and i computed with respect to frame i 
+    %
+    % rc = a vector containing the values ^ir_{ci} that is the distance
+    % between the i-th CoM from the i-th reference frame
+    %
+    % g0= a vector representing g wrt fame 0
+    %
+    % prismatic indices= a list containing the list of prismatic indices,
+    % ex for a PPR= [1,2]
+    %
+    %
+    %output:
+
+    syms Ixx Iyy Izz real 
+
+
+    % Check that the DH is consistent with the indicated number of joints 
+    if size(DH, 1) ~= num_joints
+        error('Number of rows in DH matrix should be equal to the number of joints.');
+    end
+
+    % Check that the r is consistent with the number of joints 
+    if size(r,2) ~= num_joints
+        size(r,2)
+        error('Length of r vector should be equal to the number of joints.');
+    end
+
+    % Check that rc is consistent with the number of joints 
+    if size(rc,2) ~= num_joints
+        error('Length of rc vector should be equal to the number of joints.');
+    end
+
+    % Display the number of joints and prismatic indices
+    disp(['Number of joints: ', num2str(num_joints)]);
+
+    rotations = sym(zeros(3,3, num_joints));
+    rotations_from_zero = sym(zeros(3,3, num_joints));
+    i_g=sym(zeros(3,num_joints))
+
+    for i=1:num_joints
+        A=DHMatrix(DH(i,:));
+        R=A(1:3,1:3);
+        rotations(:,:,i)=R;
+        A=DHMatrix(DH(1:i,:));
+        R=A(1:3,1:3);
+        rotations_from_zero(:,:,i)=R;
+        i_g(:,i)=rotations_from_zero(:,:,i)'*g0;
+    end
+    
+   
+
+    %forward pass
+    % -------- initialization -----------------
+    w_prev=[0;0;0];
+    w_dot_prev=[0;0;0];
+    a_prev=[0;0;0];
+
+    w_vector=zeros(3,num_joints);
+    w_dot_vector=zeros(3,num_joints);
+    a_vector=zeros(3,num_joints);
+    a_c_vector=zeros(3,num_joints);
+
+    % --------- starting forward pass -------------
+    for i=1:num_joints
+        w=rotations(:,:,i)'*(w_prev+qd(i)*[0;0;1]);
+        w=vpa(simplify(w))
+        fprintf("the w of link %d is:",i);
+        disp(w)
+        w_vector(:,i)=w;
+
+        w_dot=rotations(:,:,i)'*(w_dot_prev+qdd(i)*[0;0;1]+cross(qd(i)*w_prev,[0;0;1]));
+        fprintf("the w_dot of link %d is:",i);
+        disp(w_dot)
+        w_dot_vector(:,i)=w_dot;
+
+        a=rotations(:,:,i)'*a_prev+cross(w_dot,r(:,i))+cross(w,r(:,i))
+        a=vpa(simplify(a))
+        fprintf("the a of link %d is:",i);
+        disp(a);
+        a_vector(:,i)=a;
+
+        a_c=a+cross(w_dot,r(:,i))+cross(w,cross(w,r(:,i)))
+        fprintf("the a_c of link %d is:",i);
+        disp(a_c);
+        a_c_vector(:,i)=a_c;
+
+        %update the prev
+        w_prev=w;
+        W_dot_prev=w_dot;
+        a_prev=a;
+    end
+
+    %starting backward pass
+    %---------------- initialization --------------------
+    f_next=[0;0;0];
+    tau_next=[0;0;0];
+
+    f_vector=sym(zeros(3,num_joints));
+    tau_vector=sym(zeros(3,num_joints));
+
+    %--------------- starting backward pass --------------
+    for i=num_joints:-1:1
+        if i == num_joints
+            f=m(i)*(a_c_vector(:,i)-i_g(:,i));
+        else
+            f=rotations(:,:,i+1)*f_next+m(i)*(a_c_vector(:,i)-i_g(:,i));
+        end
+        f=vpa(simplify(f));
+        fprintf("the f of link %d is:",i);
+        disp(f);
+        f_vector(:,i)=f;
+
+        if i ==num_joints
+            tau=-cross(f,(r(:,i)+rc(:,i)))+I(i)*w_dot_vector(:,i)+cross(w_vector(:,i),(I(i)*w_vector(:,i)));
+        else
+            tau=rotations(:,:,i+1)*tau_next+ cross((rotations(:,:,i+1)*f_next),rc(:,i))-cross(f,(r(:,i)+rc(:,i)))+I(i)*w_dot_vector(:,i)+cross(w_vector(:,i),(I(i)*w_vector(:,i)));
+
+        end
+        tau=vpa(simplify(tau));
+        fprintf("the tau of link %d is:",i);
+        disp(tau);
+        tau_vector(:,i)=tau;
+        
+        f_next=f;
+        tau_next=tau;
+    end
+
+    u_vector=sym(zeros(3,num_joints))
+    for i=1:num_joints
+        if ismember(i, prismatic_indices)
+            ui=f_vector(:,i)'*(rotations(:,:,i)'*[0;0;1]);
+        else
+            ui=tau_vector(:,i)'*(rotations(:,:,i)'*[0;0;1]);
+        end
+        ui=vpa(simplify(ui));
+        fprintf("u of link %d is:",i);
+        disp(ui)
+        u_vector(:,i)=ui;
+    end
+
+
+
+
+
+
+
+
+*** notebooks: directory ***
+
+::::::::::::::
+plot_function.m
+::::::::::::::
+function[] = plot_function(f,x_i,x_f,rate)  
+    %funzione che genera il plot di una qualsisasi funzione continua o
+    %discontinua
+    %
+    %input:
+    %-f = funzione definita come f=@(x) ...
+    %-x_i = valore minimo della variabile
+    %-x_f = valore massimo della variabile
+    %-rate = rate di sampling nell'intervallo indicato
+    %
+    %nota: la visulaizzazione può essere migliorata modificando manualmente
+    %i margini del ylim
+    %
+    %Esempio di funzione continua:
+    %f=@(x)  x.^2
+    %Esempio di funzione a tratti:
+    %f=@(x) (x < 0.75) .*0 + (0.75 <= x & x < 1.5) .* x.^2  + (x >= 1.5) .* x;
+    
+    % Genera valori x nella gamma desiderata
+    %MODIFICA L'INTERVALLO A PIACIMENTO
+    x = linspace(0, 2, 1000);
+    x=linspace(x_i,x_f,rate);
+
+    % Calcola i valori della funzione per ciascun valore x
+    y = f(x);
+
+    % Fai il plot della funzione
+    figure;
+    plot(x, y, 'LineWidth', 2);
+    title('Plot of f');
+    xlabel('x');
+    ylabel('f(x)');
+
+    %MODIFICA LA GRANDEZZA DEL PLOT A PIACIMENTO
+    %ylim([-1, 2]);
+    grid on;::::::::::::::
+plot_multiple_functions.m
+::::::::::::::
+function plot_multiple_functions(functions, interval_start, interval_end)
+    % Input:
+    %   - functions: cell array of function handles, e.g., {@sin, @cos, @(x) x.^2}
+    %   - interval: intervallo su cui fare il plot, e.g., [0, 2*pi]
+    
+    % Creazione del vettore x sull'intervallo specificato
+    x = linspace(interval_start, interval_end, 1000);
+
+    % Inizializzazione della figura
+    figure;
+
+    % Iterazione attraverso le funzioni e plot
+    for i = 1:length(functions)
+        y = arrayfun(functions{i}, x);
+        plot(x, y, 'DisplayName', func2str(functions{i}));
+        hold on;
+    end
+
+    % Aggiunta di legenda, etichette degli assi, e titolo
+    legend('show');
+    xlabel('X-axis');
+    ylabel('Y-axis');
+    title('Plot di Funzioni Multiple');
+
+    % Opzionale: aggiunta di una griglia
+    grid on;
+
+    % Rilascio del "hold"
+    hold off;
+end::::::::::::::
+reduced_gradient.m
+::::::::::::::
+%% Reduced Gradient
+function qd_red = reduced_gradient(JA,JB,T,pd)
+    % takes as inputs:
+    %   - JA = the jacobian matrix JA of decomposion of J
+    %          of size MxM, non singular
+    %   - JB = the jacobian matrix JB of decomposion of J
+    %          of size Mx(N-M)
+    %   - T = identity matrix, corresponding to the q 
+    %         variables of the Jacobean JA and JB. 
+    %         For example J has dimension 2x3 = [JA JB]. 
+    %         JA =[J1 J3] and JB = [J2].
+    %         T will be = [1 0 0; 0 0 1; 0 1 0], first column
+    %         [1;0;0;] because we have q1, second column is 
+    %         [0;0;1;] because we have q3 and the last column is
+    %         [0;1;0;] because we have q2
+    %   - pd = the cartesian velocity
+    %
+    % output:
+    %   - qd_red = q dot obtain by reduced gradient
+
+    syms q1 q2 q3
+    %% JA and JB two matrices give by decomposion that compose J
+    J = [JA JB];
+   
+    %% control if JA is full row rank
+    if rank(JA) == size(JA,1)
+        invJA=inv(JA);
+    else
+        disp("my friend, you have a problem")
+    end
+    
+    %% Compute gradient of the objective function given by the problem
+    % for example: H(q) = sin^2(q2)+sin^2(q3) 
+    % in this case fist row is zero because we don't have variable q1
+    gradq_H= [0; 2*sin(q2)*cos(q2); 2*sin(q3)*cos(q3)];
+    
+    %% Compute reduced gradient
+    first_part = invJA*JB;
+    transpose_first = -transpose(first_part);
+    redgrad_qb_H = [transpose_first 1]*(T*gradq_H);
+    
+    %% q dot reduced gradient
+    qd_red = transpose(T)*[invJA*(pd - JB * redgrad_qb_H); redgrad_qb_H] 
+::::::::::::::
+regressor_matrix.m
+::::::::::::::
+function Y = regressor_matrix(arg, a_vector)
+    % Compute the regressor matrix of a given vector
+    % INPUTS:
+    % arg: the function to compute the regressor matrix
+    % a_vector: the vector to compute the regressor matrix
+    % OUTPUTS:
+    % Y: the regressor matrix of the given vector
+
+    Y = simplify(jacobian(arg, a_vector));
+    disp('The regressor matrix is: ');
+    disp(Y);
+    
+    end
+::::::::::::::
+skew_sym.m
+::::::::::::::
+function S = skew_sym(v)
+    % Check that the input vector is a column vector
+    v = v(:);
+    % Create skew_symmetric matrix 3x3
+    S = [ 0,    -v(3),  v(2);
+          v(3),  0,    -v(1);
+         -v(2),  v(1),  0 ];
+end
